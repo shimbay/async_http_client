@@ -8,19 +8,9 @@ namespace async_http_client {
 
 class Sock {
 public:
-  ClientInfo *info = nullptr;
-
-  CURL *easy = nullptr;
-  char *url = nullptr;
   curl_socket_t sockfd{};
-  int action{};
-  long timeout{};
   struct ev_io ev {};
   int ev_set{};
-
-  Sock() {}
-
-  virtual ~Sock() {}
 };
 
 class CurlSession {
@@ -40,93 +30,7 @@ public:
   std::function<void(HTTPErrorCode err, const std::string &err_msg,
                      const AsyncHTTPClient::Response &resp)>
       cb = nullptr;
-
-  CurlSession() {}
-
-  virtual ~CurlSession() {}
 };
-
-struct data {
-  char trace_ascii; /* 1 or 0 */
-};
-
-static void dump(const char *text, FILE *stream, unsigned char *ptr, size_t size, char nohex) {
-  size_t i;
-  size_t c;
-
-  unsigned int width = 0x10;
-
-  if (nohex) /* without the hex output, we can fit more on screen */
-    width = 0x40;
-
-  fprintf(stream, "%s, %10.10lu bytes (0x%8.8lx)\n", text, (unsigned long)size,
-          (unsigned long)size);
-
-  for (i = 0; i < size; i += width) {
-    fprintf(stream, "%4.4lx: ", (unsigned long)i);
-
-    if (!nohex) {
-      /* hex not disabled, show it */
-      for (c = 0; c < width; c++)
-        if (i + c < size)
-          fprintf(stream, "%02x ", ptr[i + c]);
-        else
-          fputs("   ", stream);
-    }
-
-    for (c = 0; (c < width) && (i + c < size); c++) {
-      /* check for 0D0A; if found, skip past and start a new line of output */
-      if (nohex && (i + c + 1 < size) && ptr[i + c] == 0x0D && ptr[i + c + 1] == 0x0A) {
-        i += (c + 2 - width);
-        break;
-      }
-      fprintf(stream, "%c", (ptr[i + c] >= 0x20) && (ptr[i + c] < 0x80) ? ptr[i + c] : '.');
-      /* check again for 0D0A, to avoid an extra \n if it's at width */
-      if (nohex && (i + c + 2 < size) && ptr[i + c + 1] == 0x0D && ptr[i + c + 2] == 0x0A) {
-        i += (c + 3 - width);
-        break;
-      }
-    }
-    fputc('\n', stream); /* newline */
-  }
-  fflush(stream);
-}
-
-static int my_trace(CURL *handle, curl_infotype type, char *data, size_t size, void *userp) {
-  struct data *config = (struct data *)userp;
-  const char *text;
-  (void)handle; /* prevent compiler warning */
-
-  switch (type) {
-  case CURLINFO_TEXT:
-    fprintf(stderr, "== Info: %s", data);
-    /* FALLTHROUGH */
-  default: /* in case a new one is introduced to shock us */
-    return 0;
-
-  case CURLINFO_HEADER_OUT:
-    text = "=> Send header";
-    break;
-  case CURLINFO_DATA_OUT:
-    text = "=> Send data";
-    break;
-  case CURLINFO_SSL_DATA_OUT:
-    text = "=> Send SSL data";
-    break;
-  case CURLINFO_HEADER_IN:
-    text = "<= Recv header";
-    break;
-    //        case CURLINFO_DATA_IN:
-    //            text = "<= Recv data";
-    //            break;
-  case CURLINFO_SSL_DATA_IN:
-    text = "<= Recv SSL data";
-    break;
-  }
-
-  dump(text, stderr, (unsigned char *)data, size, config->trace_ascii);
-  return 0;
-}
 
 static void timer_cb(struct ev_loop *l, struct ev_timer *w, int revents);
 
@@ -139,7 +43,6 @@ static void set_sock(ClientInfo *info, Sock *sock, curl_socket_t s, CURL *e, int
 static void rm_sock(ClientInfo *info, Sock *sock);
 
 static int multi_timer_cb(CURLM *multi, long timeout_ms, ClientInfo *info) {
-  //    INFO("Multi timer cb: {}, {}", (void *) info, timeout_ms);
   ev_timer_stop(info->loop, &info->timer_event);
   if (timeout_ms >= 0) {
     /* -1 means delete, other values are timeout times in milliseconds */
@@ -152,7 +55,6 @@ static int multi_timer_cb(CURLM *multi, long timeout_ms, ClientInfo *info) {
 
 static void timer_cb(struct ev_loop *l, struct ev_timer *w, int revents) {
   auto *info = (ClientInfo *)w->data;
-  //    INFO("Timer cb: {}, {}", (void *) info, revents);
   int sr;
   curl_multi_socket_action(info->multi, CURL_SOCKET_TIMEOUT, 0, &sr);
   check_multi_info(info);
@@ -160,7 +62,6 @@ static void timer_cb(struct ev_loop *l, struct ev_timer *w, int revents) {
 
 static void event_cb(struct ev_loop *l, struct ev_io *w, int revents) {
   auto *info = (ClientInfo *)w->data;
-  //    INFO("Event cb: {}, {}", (void *) info, revents);
   int action = (revents & EV_READ ? CURL_POLL_IN : 0) | (revents & EV_WRITE ? CURL_POLL_OUT : 0);
   int sr;
   curl_multi_socket_action(info->multi, w->fd, action, &sr);
@@ -174,8 +75,6 @@ static int sock_cb(CURL *e, curl_socket_t s, int what, void *cbp, void *sockp) {
   auto *info = (ClientInfo *)cbp;
   auto *sock = (Sock *)sockp;
   static const char *whatstr[] = {"none", "IN", "OUT", "INOUT", "REMOVE"};
-  //    INFO("Sock {} cb: i={} s={} e={} what={}", (void *) sock, (void *) info,
-  //    s, e, whatstr[what]);
   if (what == CURL_POLL_REMOVE) {
     rm_sock(info, sock);
   } else {
@@ -195,8 +94,6 @@ static size_t header_cb(void *ptr, size_t size, size_t nmemb, void *data) {
   }
   auto *session = (CurlSession *)data;
   auto c_ptr = (char *)ptr;
-  //    std::string all(c_ptr, real_size);
-  //    INFO("Header callback, {}, {}", all, real_size);
   std::string key, value;
   bool key_area = true;
   for (size_t i = 0; i < real_size; ++i) {
@@ -221,14 +118,13 @@ static size_t header_cb(void *ptr, size_t size, size_t nmemb, void *data) {
   if (key_area) {
     return real_size;
   }
-  size_t found = value.find("\r\n");
+  size_t found = value.rfind("\r\n");
   value = value.substr(0, found);
   session->response_header[key] = value;
   return real_size;
 }
 
 static size_t write_cb(void *ptr, size_t size, size_t nmemb, void *data) {
-  //    INFO("Body callback");
   size_t real_size = size * nmemb;
   if (real_size == 0) {
     return real_size;
@@ -248,7 +144,6 @@ static size_t write_cb(void *ptr, size_t size, size_t nmemb, void *data) {
 }
 
 static void check_multi_info(ClientInfo *info) {
-  //    INFO("Check multi info: {}", (void *) info);
   CurlSession *session;
   int msgs_left;
   CURL *easy;
@@ -287,10 +182,7 @@ static void check_multi_info(ClientInfo *info) {
 
 static void set_sock(ClientInfo *info, Sock *sock, curl_socket_t s, CURL *e, int action) {
   int kind = (action & CURL_POLL_IN ? EV_READ : 0) | (action & CURL_POLL_OUT ? EV_WRITE : 0);
-  //    INFO("Sock {} updated, {}", (void *) sock, (void *) info);
   sock->sockfd = s;
-  sock->action = action;
-  sock->easy = e;
   if (sock->ev_set) {
     ev_io_stop(info->loop, &sock->ev);
   }
@@ -302,8 +194,6 @@ static void set_sock(ClientInfo *info, Sock *sock, curl_socket_t s, CURL *e, int
 
 static void add_sock(ClientInfo *info, curl_socket_t s, CURL *easy, int action) {
   auto *sock = new Sock;
-  //    INFO("Sock {} created, {}", (void *) sock, (void *) info);
-  sock->info = info;
   set_sock(info, sock, s, easy, action);
   curl_multi_assign(info->multi, s, sock);
 }
@@ -314,7 +204,6 @@ static void rm_sock(ClientInfo *info, Sock *sock) {
       ev_io_stop(info->loop, &sock->ev);
     }
     delete sock;
-    //        INFO("Sock {} removed, {}", (void *) sock, (void *) info);
   }
 }
 
@@ -334,6 +223,9 @@ AsyncHTTPClient::AsyncHTTPClient(const AsyncHTTPClient::Setting &setting) : m_se
   ev_timer_init(&m_info.timer_event, timer_cb, 100, 0.);
   m_info.timer_event.data = &m_info;
   m_info.multi = curl_multi_init();
+  curl_multi_setopt(m_info.multi, CURLMOPT_MAXCONNECTS, m_setting.max_connections);
+  curl_multi_setopt(m_info.multi, CURLMOPT_MAX_HOST_CONNECTIONS,
+                    m_setting.max_conncetions_per_host);
   curl_multi_setopt(m_info.multi, CURLMOPT_SOCKETFUNCTION, sock_cb);
   curl_multi_setopt(m_info.multi, CURLMOPT_SOCKETDATA, &m_info);
   curl_multi_setopt(m_info.multi, CURLMOPT_TIMERFUNCTION, multi_timer_cb);
@@ -348,6 +240,24 @@ AsyncHTTPClient::~AsyncHTTPClient() {
 
 void AsyncHTTPClient::get(AsyncHTTPClient::GetRequest &request) {
   request.m_method = GET;
+  if (request.m_url[request.m_url.size() - 1] != '?') {
+    request.m_url += '?';
+  }
+  bool first = true;
+  for (auto &entry : request.m_url_params) {
+    char *ek = curl_escape(entry.first.data(), entry.first.size());
+    char *ev = curl_escape(entry.second.data(), entry.second.size());
+    if (first) {
+      first = false;
+    } else {
+      request.m_url += '&';
+    }
+    request.m_url += ek;
+    request.m_url += '=';
+    request.m_url += ev;
+    curl_free(ek);
+    curl_free(ev);
+  }
   do_request(request);
 }
 
@@ -362,16 +272,20 @@ void AsyncHTTPClient::post(AsyncHTTPClient::PostRequest &request) {
     assert(request.m_body.empty());
     bool first_pair = true;
     for (auto &form_param : request.m_form_params) {
+      char *ek = curl_escape(form_param.first.data(), form_param.first.size());
+      char *ev = curl_escape(form_param.second.data(), form_param.second.size());
+      size_t ek_size = strlen(ek);
+      size_t ev_size = strlen(ev);
       if (first_pair) {
         first_pair = false;
       } else {
         request.m_body.emplace_back('&');
       }
-      const std::string &key = form_param.first;
-      const std::string &value = form_param.second;
-      std::copy(key.begin(), key.end(), std::back_inserter(request.m_body));
+      std::copy(ek, ek + ek_size, std::back_inserter(request.m_body));
       request.m_body.emplace_back('=');
-      std::copy(value.begin(), value.end(), std::back_inserter(request.m_body));
+      std::copy(ev, ev + ev_size, std::back_inserter(request.m_body));
+      curl_free(ek);
+      curl_free(ev);
     }
   }
   do_request(request);
@@ -425,12 +339,8 @@ void AsyncHTTPClient::do_request(Request &request) {
   curl_easy_setopt(session->easy, CURLOPT_TIMEOUT_MS, m_setting.request_timeout);
   curl_easy_setopt(session->easy, CURLOPT_KEEP_SENDING_ON_ERROR, 1L);
   if (request.m_method == POST) {
-    curl_easy_setopt(session->easy, CURLOPT_POST, 1L);
-    if (!session->request_body.empty()) {
-      curl_easy_setopt(session->easy, CURLOPT_POSTFIELDS, session->request_body.data());
-    } else {
-      curl_easy_setopt(session->easy, CURLOPT_POSTFIELDS, "");
-    }
+    curl_easy_setopt(session->easy, CURLOPT_POSTFIELDSIZE, session->request_body.size());
+    curl_easy_setopt(session->easy, CURLOPT_POSTFIELDS, session->request_body.data());
   }
   curl_multi_add_handle(m_info.multi, session->easy);
 }

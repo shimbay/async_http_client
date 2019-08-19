@@ -1,12 +1,12 @@
 #pragma once
 
 #include <cstring>
+#include <curl/curl.h>
+#include <ev.h>
 #include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
-#include <curl/curl.h>
-#include <ev.h>
 
 #include "conlib/concurrent/executor.h"
 
@@ -33,8 +33,10 @@ class AsyncHTTPClient : public std::enable_shared_from_this<AsyncHTTPClient> {
 public:
   class Setting {
   public:
-    int connection_timeout = 500;
-    int request_timeout = 3000;
+    size_t max_connections = 5;
+    size_t max_conncetions_per_host = 0;
+    size_t connection_timeout = 500;
+    size_t request_timeout = 3000;
 
     std::shared_ptr<conlib::Executor> executor = nullptr;
 

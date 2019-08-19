@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.5)
 project(async_http_client)
 
 # Set pkg-config dependencies
-set(deps GTEST CURL LIBEV)
-set(dep_pkg_names gtest libcurl libev)
+set(deps GTEST LIBEV)
+set(dep_pkg_names gtest libev)
 
 find_package(PkgConfig REQUIRED)
 list(LENGTH deps deps_size)
@@ -46,10 +46,22 @@ file(GLOB_RECURSE TESTS test/*.cpp)
 
 set(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-std=c++14 -fPIC -ggdb -Wno-deprecated-declarations")
 
-add_library(async_http_client.core OBJECT ${SRCS} ${OTHERS})
+add_subdirectory(third_party)
+
+add_executable(async_http_client.core ${TESTS} ${SRCS} ${OTHERS})
+add_dependencies(async_http_client.core libz libcurl)
 set_target_properties(async_http_client.core PROPERTIES
         COMPILE_FLAGS "-O3 -fPIC"
         )
+#target_include_directories(
+#        async_http_client.core
+#        PUBLIC $<TARGET_PROPERTY:libcurl,INCLUDE_DIRECTORIES>
+#)
+target_link_libraries(
+        async_http_client.core
+        PRIVATE libcurl
+        PRIVATE libz
+        PUBLIC ${COMMON_LINK_LIBRARIES}
+)
 
-add_executable(async_http_client.test ${TESTS} $<TARGET_OBJECTS:async_http_client.core>)
-target_link_libraries(async_http_client.test ${COMMON_LINK_LIBRARIES})
+#add_executable(async_http_client.test ${TESTS} async_http_client.core)
