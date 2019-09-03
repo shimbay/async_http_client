@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <utility>
 #include <vector>
+#include <algorithm>
+#include <map>
 
 #include "conlib/concurrent/executor.h"
 
@@ -29,6 +31,16 @@ enum HTTPRequestMethod {
   DELETE,
 };
 
+struct HeaderComparator {
+    bool operator() (const std::string& s1, const std::string& s2) const {
+      std::string str1(s1.length(),' ');
+      std::string str2(s2.length(),' ');
+      std::transform(s1.begin(), s1.end(), str1.begin(), tolower);
+      std::transform(s2.begin(), s2.end(), str2.begin(), tolower);
+      return  str1 < str2;
+    }
+};
+
 class AsyncHTTPClient : public std::enable_shared_from_this<AsyncHTTPClient> {
 public:
   class Setting {
@@ -46,7 +58,7 @@ public:
   class Response {
   public:
     long code{};
-    std::unordered_map<std::string, std::string> headers{};
+    std::map<std::string, std::string, HeaderComparator> headers{};
     std::vector<char> body{};
   };
 
@@ -62,7 +74,7 @@ public:
   protected:
     HTTPRequestMethod m_method{};
     std::string m_url{};
-    std::unordered_map<std::string, std::string> m_headers{};
+    std::map<std::string, std::string, HeaderComparator> m_headers{};
     std::unordered_map<std::string, std::string> m_url_params{};
     std::vector<char> m_body{};
     std::unordered_map<std::string, std::string> m_form_params{};

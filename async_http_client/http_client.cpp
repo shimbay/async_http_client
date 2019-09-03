@@ -23,7 +23,7 @@ public:
 
   std::vector<char> request_body{};
 
-  std::unordered_map<std::string, std::string> response_header{};
+  std::map<std::string, std::string, HeaderComparator> response_header{};
   size_t current_body_size = 0;
   std::vector<char> response_body{};
 
@@ -125,22 +125,19 @@ static size_t header_cb(void *ptr, size_t size, size_t nmemb, void *data) {
 }
 
 static size_t write_cb(void *ptr, size_t size, size_t nmemb, void *data) {
-  size_t real_size = size * nmemb;
-  if (real_size == 0) {
-    return real_size;
+  //    INFO("Body callback");
+  size_t part_size = size * nmemb;
+  if (part_size == 0) {
+    return part_size;
   }
   auto *session = (CurlSession *)data;
-  if (session->response_body.empty()) {
-    curl_off_t cl;
-    curl_easy_getinfo(session->easy, CURLINFO_CONTENT_LENGTH_DOWNLOAD_T, &cl);
-    if (cl == -1) {
-      return real_size;
-    }
-    session->response_body.resize(static_cast<unsigned long>(cl));
+  size_t new_size = session->current_body_size + part_size;
+  if (session->response_body.size() < new_size) {
+    session->response_body.resize(new_size * 1.5);
   }
-  std::memcpy(&session->response_body[session->current_body_size], ptr, real_size);
-  session->current_body_size += real_size;
-  return real_size;
+  std::memcpy(&session->response_body[session->current_body_size], ptr, part_size);
+  session->current_body_size += part_size;
+  return part_size;
 }
 
 static void check_multi_info(ClientInfo *info) {
@@ -169,6 +166,7 @@ static void check_multi_info(ClientInfo *info) {
           session->cb(HTTPRequestError, session->error, resp);
         } else {
           resp.code = response_code;
+          session->response_body.resize(session->current_body_size);
           resp.body = std::move(session->response_body);
           resp.headers = std::move(session->response_header);
           session->cb(OK, "", resp);
