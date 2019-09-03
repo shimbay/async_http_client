@@ -217,6 +217,8 @@ AsyncHTTPClient::AsyncHTTPClient(const AsyncHTTPClient::Setting &setting) : m_se
   assert(setting.executor != nullptr);
   m_info.loop = ev_loop_new(0);
   m_info.executor = m_setting.executor;
+  ev_work_init();
+  m_worker = std::thread(&AsyncHTTPClient::ev_work, this);
   ev_timer_init(&m_info.timer_event, timer_cb, 100, 0.);
   m_info.timer_event.data = &m_info;
   m_info.multi = curl_multi_init();
@@ -227,7 +229,6 @@ AsyncHTTPClient::AsyncHTTPClient(const AsyncHTTPClient::Setting &setting) : m_se
   curl_multi_setopt(m_info.multi, CURLMOPT_SOCKETDATA, &m_info);
   curl_multi_setopt(m_info.multi, CURLMOPT_TIMERFUNCTION, multi_timer_cb);
   curl_multi_setopt(m_info.multi, CURLMOPT_TIMERDATA, &m_info);
-  m_worker = std::thread(&AsyncHTTPClient::ev_work, this);
 }
 
 AsyncHTTPClient::~AsyncHTTPClient() {
@@ -350,12 +351,14 @@ static void generator_cb(EV_P_ struct ev_timer *w, int revents) {
   }
 }
 
-void AsyncHTTPClient::ev_work() {
-  ev_timer request_generator;
+void AsyncHTTPClient::ev_work_init() {
   ev_init(&request_generator, generator_cb);
   request_generator.repeat = 1;
   request_generator.data = &m_running;
   ev_timer_again(m_info.loop, &request_generator);
+}
+
+void AsyncHTTPClient::ev_work() {
   ev_loop(m_info.loop, 0);
 }
 

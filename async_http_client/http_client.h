@@ -108,11 +108,13 @@ public:
 private:
   Setting m_setting{};
   ClientInfo m_info{};
+  ev_timer request_generator;
   std::thread m_worker{};
   bool m_running{true};
 
   void do_request(Request &request);
 
+  void ev_work_init();
   void ev_work();
 };
 
