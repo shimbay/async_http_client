@@ -217,7 +217,6 @@ AsyncHTTPClient::AsyncHTTPClient(const AsyncHTTPClient::Setting &setting) : m_se
   assert(setting.executor != nullptr);
   m_info.loop = ev_loop_new(0);
   m_info.executor = m_setting.executor;
-  m_worker = std::thread(&AsyncHTTPClient::ev_work, this);
   ev_timer_init(&m_info.timer_event, timer_cb, 100, 0.);
   m_info.timer_event.data = &m_info;
   m_info.multi = curl_multi_init();
@@ -228,6 +227,7 @@ AsyncHTTPClient::AsyncHTTPClient(const AsyncHTTPClient::Setting &setting) : m_se
   curl_multi_setopt(m_info.multi, CURLMOPT_SOCKETDATA, &m_info);
   curl_multi_setopt(m_info.multi, CURLMOPT_TIMERFUNCTION, multi_timer_cb);
   curl_multi_setopt(m_info.multi, CURLMOPT_TIMERDATA, &m_info);
+  m_worker = std::thread(&AsyncHTTPClient::ev_work, this);
 }
 
 AsyncHTTPClient::~AsyncHTTPClient() {
